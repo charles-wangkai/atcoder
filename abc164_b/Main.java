@@ -29,7 +29,7 @@ public class Main {
         }
       }
 
-      firstTurn = !firstTurn;
+      firstTurn ^= true;
     }
   }
 }
