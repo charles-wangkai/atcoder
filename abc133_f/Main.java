@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class Main {
   public static void main(String[] args) {
@@ -41,77 +42,115 @@ public class Main {
   }
 
   static String solve(int[] a, int[] b, int[] c, int[] d, int[] x, int[] y, int[] u, int[] v) {
-    int N = a.length + 1;
     int Q = x.length;
 
-    int[][] ancestors = new int[N][Integer.toBinaryString(N).length()];
-    for (int i = 0; i < ancestors.length; ++i) {
-      Arrays.fill(ancestors[i], -1);
-    }
+    Tree tree =
+        new Tree(
+            Arrays.stream(a).map(ai -> ai - 1).toArray(),
+            Arrays.stream(b).map(bi -> bi - 1).toArray(),
+            c,
+            d);
 
-    int[] depths = new int[N];
-
-    @SuppressWarnings("unchecked")
-    List<Integer>[] edgeLists = new List[N];
-    for (int i = 0; i < edgeLists.length; ++i) {
-      edgeLists[i] = new ArrayList<>();
-    }
-    for (int i = 0; i < a.length; ++i) {
-      edgeLists[a[i] - 1].add(i);
-      edgeLists[b[i] - 1].add(i);
-    }
-
-    buildTree(a, b, edgeLists, ancestors, depths, 0, -1, 0);
-
-    int[] LCAs = new int[Q];
-    for (int i = 0; i < LCAs.length; ++i) {
-      LCAs[i] = findLCA(ancestors, depths, u[i] - 1, v[i] - 1);
-    }
+    int[] lcas = IntStream.range(0, Q).map(i -> tree.findLca(u[i] - 1, v[i] - 1)).toArray();
 
     Map<Integer, Set<Integer>> nodeToQueryIndices = new HashMap<>();
     for (int i = 0; i < Q; ++i) {
-      for (int node : new int[] {u[i] - 1, v[i] - 1, LCAs[i]}) {
+      for (int node : new int[] {u[i] - 1, v[i] - 1, lcas[i]}) {
         nodeToQueryIndices.putIfAbsent(node, new HashSet<>());
         nodeToQueryIndices.get(node).add(i);
       }
     }
 
     int[] queryResults = new int[Q];
-    search(
-        queryResults,
-        a,
-        b,
-        c,
-        d,
-        x,
-        y,
-        u,
-        v,
-        edgeLists,
-        depths,
-        LCAs,
-        nodeToQueryIndices,
-        0,
-        new HashMap<>(),
-        new HashMap<>(),
-        0);
+    tree.search(
+        queryResults, x, y, u, v, lcas, nodeToQueryIndices, 0, new HashMap<>(), new HashMap<>(), 0);
 
     return Arrays.stream(queryResults).mapToObj(String::valueOf).collect(Collectors.joining("\n"));
   }
+}
 
-  static void search(
+class Tree {
+  int n;
+  int[] u;
+  int[] v;
+  int[] c;
+  int[] d;
+  List<Integer>[] edgeLists;
+  int[] depths;
+  int[][] ancestors;
+
+  @SuppressWarnings("unchecked")
+  Tree(int[] u, int[] v, int[] c, int[] d) {
+    n = u.length + 1;
+
+    this.u = u;
+    this.v = v;
+    this.c = c;
+    this.d = d;
+
+    edgeLists = new List[n];
+    for (int i = 0; i < edgeLists.length; ++i) {
+      edgeLists[i] = new ArrayList<>();
+    }
+    for (int i = 0; i < u.length; ++i) {
+      edgeLists[u[i]].add(i);
+      edgeLists[v[i]].add(i);
+    }
+
+    depths = new int[n];
+    ancestors = new int[n][Integer.toBinaryString(n).length()];
+    buildDepthsAndAncestors(0, -1, 0);
+  }
+
+  private void buildDepthsAndAncestors(int depth, int parent, int node) {
+    depths[node] = depth;
+
+    ancestors[node][0] = parent;
+    for (int i = 1; i < ancestors[node].length; ++i) {
+      ancestors[node][i] =
+          (ancestors[node][i - 1] == -1) ? -1 : ancestors[ancestors[node][i - 1]][i - 1];
+    }
+
+    for (int edge : edgeLists[node]) {
+      int adj = (node == u[edge]) ? v[edge] : u[edge];
+      if (adj != parent) {
+        buildDepthsAndAncestors(depth + 1, node, adj);
+      }
+    }
+  }
+
+  int findLca(int node1, int node2) {
+    if (depths[node1] < depths[node2]) {
+      return findLca(node2, node1);
+    }
+
+    for (int i = ancestors[node1].length - 1; i >= 0; --i) {
+      if (ancestors[node1][i] != -1 && depths[ancestors[node1][i]] >= depths[node2]) {
+        node1 = ancestors[node1][i];
+      }
+    }
+
+    if (node1 == node2) {
+      return node1;
+    }
+
+    for (int i = ancestors[node1].length - 1; i >= 0; --i) {
+      if (ancestors[node1][i] != ancestors[node2][i]) {
+        node1 = ancestors[node1][i];
+        node2 = ancestors[node2][i];
+      }
+    }
+
+    return ancestors[node1][0];
+  }
+
+  void search(
       int[] queryResults,
-      int[] a,
-      int[] b,
-      int[] c,
-      int[] d,
       int[] x,
       int[] y,
-      int[] u,
-      int[] v,
-      List<Integer>[] edgeLists,
-      int[] depths,
-      int[] LCAs,
+      int[] node1s,
+      int[] node2s,
+      int[] lcas,
       Map<Integer, Set<Integer>> nodeToQueryIndices,
       int distance,
       Map<Integer, Integer> colorToCount,
@@ -123,36 +162,30 @@ public class Main {
               - colorToDistance.getOrDefault(x[queryIndex], 0)
               + colorToCount.getOrDefault(x[queryIndex], 0) * y[queryIndex];
 
-      if (u[queryIndex] - 1 == node) {
+      if (node1s[queryIndex] - 1 == node) {
         queryResults[queryIndex] += delta;
       }
-      if (v[queryIndex] - 1 == node) {
+      if (node2s[queryIndex] - 1 == node) {
         queryResults[queryIndex] += delta;
       }
-      if (LCAs[queryIndex] == node) {
+      if (lcas[queryIndex] == node) {
         queryResults[queryIndex] -= delta * 2;
       }
     }
 
     for (int edge : edgeLists[node]) {
-      int adj = (node == a[edge] - 1) ? (b[edge] - 1) : (a[edge] - 1);
+      int adj = (node == u[edge]) ? v[edge] : u[edge];
       if (depths[adj] == depths[node] + 1) {
         colorToCount.put(c[edge], colorToCount.getOrDefault(c[edge], 0) + 1);
         colorToDistance.put(c[edge], colorToDistance.getOrDefault(c[edge], 0) + d[edge]);
 
         search(
             queryResults,
-            a,
-            b,
-            c,
-            d,
             x,
             y,
-            u,
-            v,
-            edgeLists,
-            depths,
-            LCAs,
+            node1s,
+            node2s,
+            lcas,
             nodeToQueryIndices,
             distance + d[edge],
             colorToCount,
@@ -161,57 +194,6 @@ public class Main {
 
         colorToCount.put(c[edge], colorToCount.get(c[edge]) - 1);
         colorToDistance.put(c[edge], colorToDistance.get(c[edge]) - d[edge]);
-      }
-    }
-  }
-
-  static int findLCA(int[][] ancestors, int[] depths, int u, int v) {
-    if (depths[u] < depths[v]) {
-      return findLCA(ancestors, depths, v, u);
-    }
-
-    for (int i = ancestors[u].length - 1; i >= 0; --i) {
-      if (ancestors[u][i] != -1 && depths[ancestors[u][i]] >= depths[v]) {
-        u = ancestors[u][i];
-      }
-    }
-
-    if (u == v) {
-      return v;
-    }
-
-    for (int i = ancestors[u].length - 1; i >= 0; --i) {
-      if (ancestors[u][i] != ancestors[v][i]) {
-        u = ancestors[u][i];
-        v = ancestors[v][i];
-      }
-    }
-
-    return ancestors[u][0];
-  }
-
-  static void buildTree(
-      int[] a,
-      int[] b,
-      List<Integer>[] edgeLists,
-      int[][] ancestors,
-      int[] depths,
-      int depth,
-      int parent,
-      int node) {
-    depths[node] = depth;
-
-    ancestors[node][0] = parent;
-    for (int i = 1; i < ancestors[node].length; ++i) {
-      if (ancestors[node][i - 1] != -1) {
-        ancestors[node][i] = ancestors[ancestors[node][i - 1]][i - 1];
-      }
-    }
-
-    for (int edge : edgeLists[node]) {
-      int adj = (node == a[edge] - 1) ? (b[edge] - 1) : (a[edge] - 1);
-      if (adj != parent) {
-        buildTree(a, b, edgeLists, ancestors, depths, depth + 1, node, adj);
       }
     }
   }
