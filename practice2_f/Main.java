@@ -27,19 +27,36 @@ public class Main {
 
   static String solve(int[] a, int[] b) {
     return Arrays.stream(
-            new Convolution()
-                .convolution(
-                    Arrays.stream(a).asLongStream().toArray(),
-                    Arrays.stream(b).asLongStream().toArray(),
-                    MODULUS))
+            Convolution.convolution(
+                Arrays.stream(a).asLongStream().toArray(),
+                Arrays.stream(b).asLongStream().toArray(),
+                MODULUS))
         .mapToObj(String::valueOf)
         .collect(Collectors.joining(" "));
   }
 }
 
 class Convolution {
+  private static final long MOD1 = 754974721L;
+  private static final long MOD2 = 167772161L;
+  private static final long MOD3 = 469762049L;
+
+  private static final int ROOT1 = 11;
+  private static final int ROOT2 = 3;
+  private static final int ROOT3 = 3;
+
+  private static final long M2M3 = MOD2 * MOD3;
+  private static final long M1M3 = MOD1 * MOD3;
+  private static final long M1M2 = MOD1 * MOD2;
+
+  private static final long M1M2M3 = MOD1 * MOD2 * MOD3;
+
+  private static final long I1 = new ModInt((int) MOD1).powMod((int) (M2M3 % MOD1), MOD1 - 2);
+  private static final long I2 = new ModInt((int) MOD2).powMod((int) (M1M3 % MOD2), MOD2 - 2);
+  private static final long I3 = new ModInt((int) MOD3).powMod((int) (M1M2 % MOD3), MOD3 - 2);
+
   // https://github.com/ocha98/ac-library-java/blob/main/src/ac_library/Convolution.java
-  public long[] convolution(long[] a, long[] b, int mod) {
+  public static long[] convolution(long[] a, long[] b, int mod) {
     ModInt modInt = new ModInt(mod);
 
     int n = a.length;
@@ -71,13 +88,13 @@ class Convolution {
     return a;
   }
 
-  private int ceilPow2(int n) {
+  private static int ceilPow2(int n) {
     int x = 0;
     while ((1L << x) < n) x++;
     return x;
   }
 
-  private int primitiveRoot(int m) {
+  private static int primitiveRoot(int m) {
     ModInt modInt = new ModInt(m);
 
     if (m == 2) return 1;
@@ -114,7 +131,7 @@ class Convolution {
     }
   }
 
-  private void butterfly(long[] a, int g, int mod) {
+  private static void butterfly(long[] a, int g, int mod) {
     int n = a.length;
     int h = ceilPow2(n);
 
@@ -170,7 +187,7 @@ class Convolution {
     }
   }
 
-  private void butterflyInv(long[] a, int g, int mod) {
+  private static void butterflyInv(long[] a, int g, int mod) {
     int n = a.length;
     int h = ceilPow2(n);
 
@@ -292,6 +309,145 @@ class Convolution {
           prod = prod * iroot[i + 3] % mod;
           iprod = iprod * root[i + 3] % mod;
         }
+      }
+    }
+  }
+
+  // https://chatgpt.com/share/6aed8f33-368c-83ec-a294-887a58c0ba59
+  public static long[] convolutionLL(long[] a, long[] b) {
+    int n = a.length;
+    int m = b.length;
+
+    if (n == 0 || m == 0) {
+      return new long[0];
+    }
+
+    long resultLength = (long) n + m - 1;
+
+    int len = (int) resultLength;
+
+    int[] c1 = convolutionMod(a, b, MOD1, ROOT1);
+    int[] c2 = convolutionMod(a, b, MOD2, ROOT2);
+    int[] c3 = convolutionMod(a, b, MOD3, ROOT3);
+
+    long[] result = new long[len];
+
+    for (int i = 0; i < len; i++) {
+      long x = 0;
+
+      x += ((long) c1[i] * I1 % MOD1) * M2M3;
+      x += ((long) c2[i] * I2 % MOD2) * M1M3;
+      x += ((long) c3[i] * I3 % MOD3) * M1M2;
+
+      long diff = c1[i] - Math.floorMod(x, MOD1);
+      if (diff < 0) {
+        diff += MOD1;
+      }
+
+      long[] offset = {0, 0, M1M2M3, 2 * M1M2M3, 3 * M1M2M3};
+
+      x -= offset[(int) (diff % 5)];
+
+      result[i] = x;
+    }
+
+    return result;
+  }
+
+  private static int[] convolutionMod(long[] a, long[] b, long mod, int primitiveRoot) {
+    int n = a.length;
+    int m = b.length;
+    int resultLength = n + m - 1;
+
+    int z = 1;
+    while (z < resultLength) {
+      z <<= 1;
+    }
+
+    int[] fa = new int[z];
+    int[] fb = new int[z];
+
+    for (int i = 0; i < n; i++) {
+      fa[i] = (int) Math.floorMod(a[i], mod);
+    }
+
+    for (int i = 0; i < m; i++) {
+      fb[i] = (int) Math.floorMod(b[i], mod);
+    }
+
+    ntt(fa, false, mod, primitiveRoot);
+    ntt(fb, false, mod, primitiveRoot);
+
+    for (int i = 0; i < z; i++) {
+      fa[i] = (int) ((long) fa[i] * fb[i] % mod);
+    }
+
+    ntt(fa, true, mod, primitiveRoot);
+
+    return Arrays.copyOf(fa, resultLength);
+  }
+
+  private static void ntt(int[] a, boolean inverse, long mod, int primitiveRoot) {
+    ModInt modInt = new ModInt((int) mod);
+
+    int n = a.length;
+
+    for (int i = 1, j = 0; i < n; i++) {
+      int bit = n >> 1;
+
+      while ((j & bit) != 0) {
+        j ^= bit;
+        bit >>= 1;
+      }
+
+      j ^= bit;
+
+      if (i < j) {
+        int tmp = a[i];
+        a[i] = a[j];
+        a[j] = tmp;
+      }
+    }
+
+    for (int len = 2; len <= n; len <<= 1) {
+      long wlen = modInt.powMod(primitiveRoot, (mod - 1) / len);
+
+      if (inverse) {
+        wlen = modInt.powMod((int) wlen, mod - 2);
+      }
+
+      int half = len >> 1;
+
+      for (int i = 0; i < n; i += len) {
+        long w = 1;
+
+        for (int j = 0; j < half; j++) {
+          long u = a[i + j];
+          long v = (long) a[i + j + half] * w % mod;
+
+          long sum = u + v;
+          if (sum >= mod) {
+            sum -= mod;
+          }
+
+          long diff = u - v;
+          if (diff < 0) {
+            diff += mod;
+          }
+
+          a[i + j] = (int) sum;
+          a[i + j + half] = (int) diff;
+
+          w = w * wlen % mod;
+        }
+      }
+    }
+
+    if (inverse) {
+      long invN = modInt.powMod(n, mod - 2);
+
+      for (int i = 0; i < n; i++) {
+        a[i] = (int) (a[i] * invN % mod);
       }
     }
   }
